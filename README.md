@@ -5,8 +5,10 @@ Download: [Chrome WebStore](https://chrome.google.com/webstore/detail/more-racti
 
 
 Known issues:
- - Data does not update (solved with contentscript I think)
- - Data should be editable (not sure how/if it is possible)
+ - Data should be editable. This is not possible with a DevTools sidebar pane (`createSidebarPane` is read-only); it would require rebuilding the UI as a full DevTools panel that writes back via `ractive.set(...)`.
+
+Resolved:
+ - Data now refreshes live while the pane is visible (polled, re-rendering only when values change).
 
 
 # License
