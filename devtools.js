@@ -109,11 +109,15 @@ chrome.devtools.panels.elements.createSidebarPane(
                 // Data properties
                 if (!$0 || !$0._ractive) {
                     return {message: 'Select a Ractive node for more details'};
-                } else if (Ractive.getNodeInfo($0)) { // works for 0.7-0.9
-                    Object.assign(properties, Ractive.getNodeInfo($0).ractive.get());
-                } else {
+                }
+
+                let info = Ractive.getNodeInfo($0);
+                if (!info) {
                     return {message: 'Unsupported Ractive version'};
                 }
+
+                let ractive = info.ractive;
+                Object.assign(properties, ractive.get()); // works for 0.7-0.9
 
                 // inherited properties - currently only supports SquaredUp
                 if (Ractive.components.SquaredUpBase) {
@@ -143,15 +147,16 @@ chrome.devtools.panels.elements.createSidebarPane(
                     properties = nonInheriteds;
                 }
 
-                // computed properties
-                let computations = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
+                // computed properties (viewmodel.computations in 0.9, viewmodel.computed in 1.x)
+                let viewmodel = ractive.viewmodel;
+                let computations = viewmodel.computations || viewmodel.computed || {};
 
                 let computeds = {};
                 Object.keys(computations)
                     .filter(key => computationsExposeValue || !key.startsWith('${'))
                     .forEach(key => {
                         try {
-                            computeds[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
+                            computeds[key] = readComputation(computations[key]);
                         } catch (error) {
                             computeds[key] = '⚠ ' + error.message;
                         }
@@ -160,6 +165,17 @@ chrome.devtools.panels.elements.createSidebarPane(
                 properties['Computed Properties'] = computeds;
 
                 return properties;
+            }
+
+            // .value can be stale until recomputed, so prefer .get(); .getter() is the pre-0.9 shape.
+            function readComputation(computation) {
+                if (typeof computation.get === 'function') {
+                    return computation.get();
+                }
+                if (typeof computation.getter === 'function') {
+                    return computation.getter();
+                }
+                return computation.value;
             }
         }
 
