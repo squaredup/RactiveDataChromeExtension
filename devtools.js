@@ -119,6 +119,27 @@ chrome.devtools.panels.elements.createSidebarPane(
                 let ractive = info.ractive;
                 Object.assign(properties, ractive.get()); // works for 0.7-0.9
 
+                // computed properties (viewmodel.computations in 0.9, viewmodel.computed in 1.x)
+                let viewmodel = ractive.viewmodel;
+                let computations = viewmodel.computations || viewmodel.computed || {};
+
+                let computeds = {};
+                Object.keys(computations)
+                    .filter(key => computationsExposeValue || !key.startsWith('${'))
+                    .forEach(key => {
+                        try {
+                            computeds[key] = readComputation(computations[key]);
+                        } catch (error) {
+                            computeds[key] = '⚠ ' + error.message;
+                        }
+                    });
+
+                // ractive.get() includes computed values inline alongside data;
+                // drop them here so each computed appears only in its own folder.
+                Object.keys(computeds).forEach(key => {
+                    delete properties[key];
+                });
+
                 // Split data into own vs superclass-inherited, keyed off this
                 // component's actual extend chain rather than a fixed base class.
                 let inheritedKeys = getInheritedKeys(ractive);
@@ -137,21 +158,6 @@ chrome.devtools.panels.elements.createSidebarPane(
                     own['Inherited Properties'] = inherited;
                     properties = own;
                 }
-
-                // computed properties (viewmodel.computations in 0.9, viewmodel.computed in 1.x)
-                let viewmodel = ractive.viewmodel;
-                let computations = viewmodel.computations || viewmodel.computed || {};
-
-                let computeds = {};
-                Object.keys(computations)
-                    .filter(key => computationsExposeValue || !key.startsWith('${'))
-                    .forEach(key => {
-                        try {
-                            computeds[key] = readComputation(computations[key]);
-                        } catch (error) {
-                            computeds[key] = '⚠ ' + error.message;
-                        }
-                    });
 
                 properties['Computed Properties'] = computeds;
 
