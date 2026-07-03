@@ -80,12 +80,16 @@ chrome.devtools.panels.elements.createSidebarPane(
             // computed properties
             let computations = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
 
-            let computeds = Object.keys(computations)
+            let computeds = {};
+            Object.keys(computations)
                 .filter(key => computationsExposeValue || !key.startsWith('${'))
-                .reduce((acc, key) => {
-                    acc[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
-                    return acc;
-                }, {});
+                .forEach(key => {
+                    try {
+                        computeds[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
+                    } catch (error) {
+                        computeds[key] = '⚠ ' + error.message;
+                    }
+                });
 
             properties['Computed Properties'] = computeds;
 
