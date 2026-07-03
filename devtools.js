@@ -35,8 +35,8 @@ chrome.devtools.panels.elements.createSidebarPane(
          */
         function getQuery() {
 
-            let ractiveVersion = Ractive.VERSION;
-            let majorVersion = ractiveVersion.substr(0, 3);
+            let version = (Ractive.VERSION || '').split('.').map(part => parseInt(part, 10));
+            let computationsExposeValue = version[0] > 0 || version[1] >= 9;
 
             let properties = {};
 
@@ -78,28 +78,14 @@ chrome.devtools.panels.elements.createSidebarPane(
             }
             
             // computed properties
-            let comp = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
-            let comps = {};
-            
-            // adds computed properties to data properties and returns the result
-            switch(majorVersion) {
-                case "0.9": 
-                    var computeds = Object.keys(comp)
-                        .reduce((acc, key) => {
-                            acc[key] = comp[key].value;
-                            return acc;
-                        }, comps);
-                    break;
+            let computations = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
 
-                default: 
-                    var computeds = Object.keys(comp)
-                        .filter(key => !key.startsWith('${'))
-                        .reduce((acc, key) => {
-                            acc[key] = comp[key].getter();
-                            return acc;
-                        }, comps);
-                    break;
-            }
+            let computeds = Object.keys(computations)
+                .filter(key => computationsExposeValue || !key.startsWith('${'))
+                .reduce((acc, key) => {
+                    acc[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
+                    return acc;
+                }, {});
 
             properties['Computed Properties'] = computeds;
 
