@@ -33,80 +33,142 @@ chrome.devtools.panels.elements.createSidebarPane(
             var query = "(" + getQuery.toString() + ")()";
             sidebar.setExpression(query,compName);
         }
-        
+
+        let lastSignature;
+        let pollTimer;
+        const POLL_INTERVAL_MS = 1000;
+
+        /*
+         *  Re-evaluates the component on an interval but only re-renders when
+         *  the data has actually changed, so an expanded tree is not collapsed
+         *  on every tick.
+         */
+        function refresh() {
+            var signatureQuery = "(" + getQuery.toString() + ")('signature')";
+            chrome.devtools.inspectedWindow.eval(signatureQuery, function (signature, exceptionInfo) {
+                if (exceptionInfo || signature === lastSignature) {
+                    return;
+                }
+                lastSignature = signature;
+                update();
+            });
+        }
+
+        function startPolling() {
+            update();
+            pollTimer = setInterval(refresh, POLL_INTERVAL_MS);
+        }
+
+        function stopPolling() {
+            clearInterval(pollTimer);
+        }
+
         /*
          * The chrome console query, can use all libraries available to the console as it is not called outside that context.
          */
-        function getQuery() {
+        function getQuery(mode) {
 
-            if (typeof Ractive === 'undefined') {
-                return {message: 'Ractive was not found on this page'};
+            let result = buildProperties();
+
+            if (mode !== 'signature') {
+                return result;
             }
 
-            let version = (Ractive.VERSION || '').split('.').map(part => parseInt(part, 10));
-            let computationsExposeValue = version[0] > 0 || version[1] >= 9;
-
-            let properties = {};
-
-            // Data properties
-            if (!$0 || !$0._ractive) { 
-                return {message: 'Select a Ractive node for more details'};
-            } else if (Ractive.getNodeInfo($0)) { // works for 0.7-0.9
-                Object.assign(properties, Ractive.getNodeInfo($0).ractive.get()); 
-            } else {
-                return {message: 'Unsupported Ractive version'};
-            }
-
-            // inherited properties - currently only supports SquaredUp
-            if (Ractive.components.SquaredUpBase) {
-                // component's superclass' data
-                let superClass = (Ractive.components.SquaredUpBase().get()); // TODO: find dynamic way of getting superclass if possible
-                
-                // keys for component and its parent
-                let compKeys = Object.keys(properties);
-                let superKeys = Object.keys(superClass);
-                
-                // seperate "lists" for inhertied and non inherited components
-                let inheriteds = {};
-                let nonInheriteds = {};
-
-                // for every property, if the super class has that property then add to inherited object, else add to non inherited
-                for (let key of compKeys) {
-                    if (superKeys.indexOf(key) === -1) {
-                        nonInheriteds[key] = properties[key];
-                    } else {
-                        inheriteds[key] = properties[key];
+            // Signature is used only for change detection, so functions and
+            // circular references collapse to stable tokens: equal data must
+            // always produce an equal string.
+            try {
+                let seen = new WeakSet();
+                return JSON.stringify(result, (key, value) => {
+                    if (typeof value === 'function') {
+                        return 'ƒ';
                     }
+                    if (value && typeof value === 'object') {
+                        if (seen.has(value)) {
+                            return '[Circular]';
+                        }
+                        seen.add(value);
+                    }
+                    return value;
+                });
+            } catch (error) {
+                return 'signature-unavailable';
+            }
+
+            function buildProperties() {
+
+                if (typeof Ractive === 'undefined') {
+                    return {message: 'Ractive was not found on this page'};
                 }
 
-                // add the inherited properties object to the non inhertied objects (makes a seperate folder in display)
-                nonInheriteds['Inherited Properties'] = inheriteds;
-                // reassign properties to non inhertied object (with inherited added as a sub-object) to ensure program still works with non-squp webpages
-                properties = nonInheriteds;
-            }
-            
-            // computed properties
-            let computations = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
+                let version = (Ractive.VERSION || '').split('.').map(part => parseInt(part, 10));
+                let computationsExposeValue = version[0] > 0 || version[1] >= 9;
 
-            let computeds = {};
-            Object.keys(computations)
-                .filter(key => computationsExposeValue || !key.startsWith('${'))
-                .forEach(key => {
-                    try {
-                        computeds[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
-                    } catch (error) {
-                        computeds[key] = '⚠ ' + error.message;
+                let properties = {};
+
+                // Data properties
+                if (!$0 || !$0._ractive) {
+                    return {message: 'Select a Ractive node for more details'};
+                } else if (Ractive.getNodeInfo($0)) { // works for 0.7-0.9
+                    Object.assign(properties, Ractive.getNodeInfo($0).ractive.get());
+                } else {
+                    return {message: 'Unsupported Ractive version'};
+                }
+
+                // inherited properties - currently only supports SquaredUp
+                if (Ractive.components.SquaredUpBase) {
+                    // component's superclass' data
+                    let superClass = (Ractive.components.SquaredUpBase().get()); // TODO: find dynamic way of getting superclass if possible
+
+                    // keys for component and its parent
+                    let compKeys = Object.keys(properties);
+                    let superKeys = Object.keys(superClass);
+
+                    // seperate "lists" for inhertied and non inherited components
+                    let inheriteds = {};
+                    let nonInheriteds = {};
+
+                    // for every property, if the super class has that property then add to inherited object, else add to non inherited
+                    for (let key of compKeys) {
+                        if (superKeys.indexOf(key) === -1) {
+                            nonInheriteds[key] = properties[key];
+                        } else {
+                            inheriteds[key] = properties[key];
+                        }
                     }
-                });
 
-            properties['Computed Properties'] = computeds;
+                    // add the inherited properties object to the non inhertied objects (makes a seperate folder in display)
+                    nonInheriteds['Inherited Properties'] = inheriteds;
+                    // reassign properties to non inhertied object (with inherited added as a sub-object) to ensure program still works with non-squp webpages
+                    properties = nonInheriteds;
+                }
 
-            return properties;
+                // computed properties
+                let computations = Ractive.getNodeInfo($0).ractive.viewmodel.computations;
+
+                let computeds = {};
+                Object.keys(computations)
+                    .filter(key => computationsExposeValue || !key.startsWith('${'))
+                    .forEach(key => {
+                        try {
+                            computeds[key] = computationsExposeValue ? computations[key].value : computations[key].getter();
+                        } catch (error) {
+                            computeds[key] = '⚠ ' + error.message;
+                        }
+                    });
+
+                properties['Computed Properties'] = computeds;
+
+                return properties;
+            }
         }
 
-        // runs initial update
+        // initial paint
         update();
-        // every time the selection changes in the elements panel, update is called
-        chrome.devtools.panels.elements.onSelectionChanged.addListener(update); 
+        // update immediately when the inspected element changes
+        chrome.devtools.panels.elements.onSelectionChanged.addListener(update);
+        // only poll for data changes while the pane is actually visible
+        sidebar.onShown.addListener(startPolling);
+        sidebar.onHidden.addListener(stopPolling);
     }
 );
