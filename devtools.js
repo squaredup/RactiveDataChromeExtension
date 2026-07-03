@@ -119,32 +119,23 @@ chrome.devtools.panels.elements.createSidebarPane(
                 let ractive = info.ractive;
                 Object.assign(properties, ractive.get()); // works for 0.7-0.9
 
-                // inherited properties - currently only supports SquaredUp
-                if (Ractive.components.SquaredUpBase) {
-                    // component's superclass' data
-                    let superClass = (Ractive.components.SquaredUpBase().get()); // TODO: find dynamic way of getting superclass if possible
+                // Split data into own vs superclass-inherited, keyed off this
+                // component's actual extend chain rather than a fixed base class.
+                let inheritedKeys = getInheritedKeys(ractive);
+                if (inheritedKeys) {
+                    let own = {};
+                    let inherited = {};
 
-                    // keys for component and its parent
-                    let compKeys = Object.keys(properties);
-                    let superKeys = Object.keys(superClass);
-
-                    // seperate "lists" for inhertied and non inherited components
-                    let inheriteds = {};
-                    let nonInheriteds = {};
-
-                    // for every property, if the super class has that property then add to inherited object, else add to non inherited
-                    for (let key of compKeys) {
-                        if (superKeys.indexOf(key) === -1) {
-                            nonInheriteds[key] = properties[key];
+                    Object.keys(properties).forEach(key => {
+                        if (inheritedKeys.indexOf(key) === -1) {
+                            own[key] = properties[key];
                         } else {
-                            inheriteds[key] = properties[key];
+                            inherited[key] = properties[key];
                         }
-                    }
+                    });
 
-                    // add the inherited properties object to the non inhertied objects (makes a seperate folder in display)
-                    nonInheriteds['Inherited Properties'] = inheriteds;
-                    // reassign properties to non inhertied object (with inherited added as a sub-object) to ensure program still works with non-squp webpages
-                    properties = nonInheriteds;
+                    own['Inherited Properties'] = inherited;
+                    properties = own;
                 }
 
                 // computed properties (viewmodel.computations in 0.9, viewmodel.computed in 1.x)
@@ -176,6 +167,34 @@ chrome.devtools.panels.elements.createSidebarPane(
                     return computation.getter();
                 }
                 return computation.value;
+            }
+
+            // Keys of the immediate superclass' default data, or null when the
+            // component does not extend another component (so it is left flat).
+            // Ractive.extend records the parent constructor as Child.Parent and
+            // aliases the prototype (carrying merged default data) as Child.defaults.
+            function getInheritedKeys(ractive) {
+                let constructor = ractive.constructor;
+                if (!constructor || !constructor.Parent || constructor.Parent === Ractive) {
+                    return null;
+                }
+
+                let parentDefaults = constructor.Parent.defaults;
+                let parentData = parentDefaults && parentDefaults.data;
+
+                if (typeof parentData === 'function') {
+                    try {
+                        parentData = parentData.call(ractive);
+                    } catch (error) {
+                        return null;
+                    }
+                }
+
+                if (!parentData || typeof parentData !== 'object') {
+                    return null;
+                }
+
+                return Object.keys(parentData);
             }
         }
 
