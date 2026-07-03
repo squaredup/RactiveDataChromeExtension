@@ -17,7 +17,11 @@ chrome.devtools.panels.elements.createSidebarPane(
          *  Queries the name of the selected component and passes the result to updatePane
          */
         function update() {
-            chrome.devtools.inspectedWindow.eval('Ractive.getNodeInfo($0).ractive.component.name', updatePane);
+            let nameQuery = '(function () {' +
+                'var info = (typeof Ractive !== "undefined" && $0 && $0._ractive) ? Ractive.getNodeInfo($0) : null;' +
+                'return (info && info.ractive.component) ? info.ractive.component.name : "";' +
+            '})()';
+            chrome.devtools.inspectedWindow.eval(nameQuery, updatePane);
         }
 
         /*
@@ -34,6 +38,10 @@ chrome.devtools.panels.elements.createSidebarPane(
          * The chrome console query, can use all libraries available to the console as it is not called outside that context.
          */
         function getQuery() {
+
+            if (typeof Ractive === 'undefined') {
+                return {message: 'Ractive was not found on this page'};
+            }
 
             let version = (Ractive.VERSION || '').split('.').map(part => parseInt(part, 10));
             let computationsExposeValue = version[0] > 0 || version[1] >= 9;
